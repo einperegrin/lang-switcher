@@ -22,7 +22,9 @@ struct LanguageProfile {
         if semivowels.contains(c) { return .semivowel }
         if consonants.contains(c) { return .consonant }
         if signs.contains(c) { return .sign }
-        if LanguageProfile.neutral.contains(c) { return .neutral }
+        // Пунктуация и цифры внутри слова ни о чём не говорят — в отличие от буквы
+        // чужого алфавита, которая является сильным доводом против этого языка.
+        if !c.isLetter { return .neutral }
         return .unknown
     }
 
@@ -125,9 +127,11 @@ enum LanguageModel {
     /// пары cr/rk/fl по отдельности английские. Спасает глобальная проверка —
     /// в настоящем слове гласные составляют примерно от 12% до 85% букв.
     private static func vowelBalance(_ chars: [Character], profile: LanguageProfile) -> Double {
-        guard chars.count >= 4 else { return 1.0 }
-        let vowels = chars.filter { profile.classify($0) == .vowel }.count
-        let ratio = Double(vowels) / Double(chars.count)
+        // Считаем долю среди букв: знаки препинания внутри слова баланс не искажают.
+        let letters = chars.filter { $0.isLetter }
+        guard letters.count >= 4 else { return 1.0 }
+        let vowels = letters.filter { profile.classify($0) == .vowel }.count
+        let ratio = Double(vowels) / Double(letters.count)
         return (ratio < 0.12 || ratio > 0.85) ? 0.35 : 1.0
     }
 

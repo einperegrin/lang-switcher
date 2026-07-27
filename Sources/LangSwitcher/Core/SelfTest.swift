@@ -66,6 +66,44 @@ enum SelfTest {
             if !ok { failures += 1 }
         }
 
+        // Границы слова. Знаки, дающие буквы в другой раскладке, должны попадать
+        // в слово: «,.hj» — это «бюро», а не два разделителя и «hj».
+        print("\nГраницы слова:")
+        let splitCases: [(String, KeyboardLayout, String, String)] = [
+            (",.hj", en, ",.hj", ""),
+            (",.hj,", en, ",.hj", ","),
+            ("hello.", en, "hello", "."),
+            ("hello, ", en, "hello", ", "),
+            ("privet", en, "privet", ""),
+            ("привет.", ru, "привет", "."),
+            (";'ok", en, ";'ok", "")
+        ]
+        for (typed, layout, expectedWord, expectedTail) in splitCases {
+            guard let strokes = synthesize(typed, in: layout) else {
+                print("  ?  \(typed) — не удалось собрать нажатия"); failures += 1; continue
+            }
+            let (word, tail) = SwitcherEngine.splitTrailingWord(strokes)
+            let gotWord = word.map(\.text).joined()
+            let gotTail = tail.map(\.text).joined()
+            let ok = gotWord == expectedWord && gotTail == expectedTail
+            print("  \(ok ? "✓" : "✗")  «\(typed)» → слово «\(gotWord)» + хвост «\(gotTail)»" +
+                  (ok ? "" : " (ждали «\(expectedWord)» + «\(expectedTail)»)"))
+            if !ok { failures += 1 }
+        }
+
+        // Конвертация слова со знаками препинания целиком.
+        print("\nКонвертация со знаками:")
+        for (typed, from, to, expected) in [(",.hj", en, ru, "бюро"), (";'ltym", en, ru, "жэдень")] {
+            guard let strokes = synthesize(typed, in: from) else {
+                print("  ?  \(typed)"); failures += 1; continue
+            }
+            let word = SwitcherEngine.splitTrailingWord(strokes).word
+            let rendered = LayoutManager.shared.render(word, in: to)?.text ?? "—"
+            let ok = rendered == expected
+            print("  \(ok ? "✓" : "✗")  \(typed) → \(rendered)\(ok ? "" : " (ждали \(expected))")")
+            if !ok { failures += 1 }
+        }
+
         // Двойное нажатие модификатора. Тест закрывает баг с единицами времени:
         // CGEvent.timestamp считался наносекундами, а содержал тики 24 МГц.
         print("\nДвойное нажатие правого Shift:")

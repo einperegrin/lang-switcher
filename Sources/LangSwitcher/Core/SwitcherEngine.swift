@@ -189,7 +189,9 @@ final class SwitcherEngine {
 
         let stroke = KeyStroke(keyCode: keyCode, flags: flags, text: text, layoutID: layout.id)
 
-        if stroke.isWordCharacter {
+        // Слово обрывает только настоящий разделитель. Запятая и точка английской
+        // раскладки им не являются: в русской это буквы, и слово может продолжаться.
+        if LayoutManager.shared.role(of: stroke) != .separator {
             append(stroke)
             return false
         }
@@ -222,16 +224,21 @@ final class SwitcherEngine {
         doubleTap.noteOtherInput()
     }
 
-    /// Хвостовые разделители (например, уже набранный пробел) и слово перед ними.
-    private func trailingWordWithTail() -> (word: [KeyStroke], tail: [KeyStroke]) {
-        var tailCount = 0
+    /// Делит конец буфера на слово и хвост из знаков после него.
+    ///
+    /// Двусмысленные нажатия (`,` `.` `;` `[`, дающие буквы в другой раскладке)
+    /// попадают в слово, только если за ними ещё идут буквы: в `,.hj` они —
+    /// начало «бюро», а точка в конце `hello.` остаётся пунктуацией.
+    static func splitTrailingWord(_ strokes: [KeyStroke]) -> (word: [KeyStroke], tail: [KeyStroke]) {
+        let manager = LayoutManager.shared
         var index = strokes.count - 1
-        while index >= 0, !strokes[index].isWordCharacter {
+        var tailCount = 0
+        while index >= 0, manager.role(of: strokes[index]) != .letter {
             tailCount += 1
             index -= 1
         }
         var wordCount = 0
-        while index >= 0, strokes[index].isWordCharacter {
+        while index >= 0, manager.role(of: strokes[index]) != .separator {
             wordCount += 1
             index -= 1
         }
@@ -240,12 +247,19 @@ final class SwitcherEngine {
         return (word, tail)
     }
 
+    private func trailingWordWithTail() -> (word: [KeyStroke], tail: [KeyStroke]) {
+        Self.splitTrailingWord(strokes)
+    }
+
     // MARK: - Автокоррекция на границе слова
 
     private func handleWordBoundary(separator: KeyStroke) -> (() -> Void)? {
-        let word = trailingWordWithTail().word
+        let (word, tail) = trailingWordWithTail()
         guard !word.isEmpty else { return nil }
         let originalText = word.map(\.text).joined()
+        // Между словом и разделителем могут стоять знаки («привет,» + пробел).
+        // Их не конвертируем, но перепечатать обязаны — иначе backspace'ы съедят их.
+        let tailText = tail.map(\.text).joined()
 
         var finalText = originalText
         var target: KeyboardLayout?
@@ -270,12 +284,12 @@ final class SwitcherEngine {
 
         guard finalText != originalText else { return nil }
 
-        let deleteCount = originalText.count
-        let insertText = finalText + separator.text
+        let deleteCount = originalText.count + tailText.count
+        let insertText = finalText + tailText + separator.text
 
         if let target, !replaced, let rendered = LayoutManager.shared.render(word, in: target) {
-            let head = strokes.count - word.count
-            strokes = Array(strokes.prefix(head)) + rendered.strokes
+            let head = strokes.count - (word.count + tail.count)
+            strokes = Array(strokes.prefix(head)) + rendered.strokes + tail
         } else {
             // Текст на экране больше не соответствует нажатиям (автозамена или
             // непереводимое слово) — держать рассинхронизированный буфер опаснее,

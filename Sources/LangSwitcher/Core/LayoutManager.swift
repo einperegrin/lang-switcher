@@ -41,6 +41,21 @@ extension Notification.Name {
     static let layoutDidChange = Notification.Name("LangSwitcher.layoutDidChange")
 }
 
+/// Роль нажатия в составе слова.
+///
+/// Ключевой момент: «буква» — понятие, зависящее от раскладки. Клавиши `,` и `.`
+/// в английской раскладке дают пунктуацию, а в ЙЦУКЕН — буквы «б» и «ю».
+/// Поэтому `,.hj` («бюро», набранное не в той раскладке) — одно слово, а не два
+/// разделителя и «hj».
+enum StrokeRole {
+    /// Буква или цифра в текущей раскладке.
+    case letter
+    /// В текущей раскладке не буква, но в какой-то другой — буква.
+    case ambiguous
+    /// Разделитель в любой из установленных раскладок.
+    case separator
+}
+
 final class LayoutManager {
     static let shared = LayoutManager()
 
@@ -87,6 +102,9 @@ final class LayoutManager {
             }
         }
         convertibleLayouts = found
+        roleCache.removeAll()
+        alphabetCache.removeAll()
+        characterMapCache.removeAll()
         refreshCurrent()
     }
 
@@ -113,6 +131,26 @@ final class LayoutManager {
                                         object: nil,
                                         userInfo: ["initiatedBySwitcher": initiatedBySwitcher])
     }
+
+    /// Определяет, может ли нажатие быть частью слова — с оглядкой на все раскладки.
+    func role(of stroke: KeyStroke) -> StrokeRole {
+        if stroke.isWordCharacter { return .letter }
+        let key = UInt64(stroke.keyCode) | (stroke.flags.rawValue << 16)
+        if let cached = roleCache[key] { return cached }
+
+        var role = StrokeRole.separator
+        for layout in convertibleLayouts where layout.id != stroke.layoutID {
+            guard let data = layout.layoutData,
+                  let produced = KeyTranslator.string(keyCode: stroke.keyCode, flags: stroke.flags, layoutData: data),
+                  produced.count == 1, let character = produced.first, character.isLetter else { continue }
+            role = .ambiguous
+            break
+        }
+        roleCache[key] = role
+        return role
+    }
+
+    private var roleCache: [UInt64: StrokeRole] = [:]
 
     /// Заново «проигрывает» нажатия в другой раскладке.
     func render(_ strokes: [KeyStroke], in layout: KeyboardLayout) -> RenderedWord? {

@@ -90,7 +90,12 @@ the hash, and will survive rebuilds.
    another layout's data. That's why there are no lookup tables like `й→q` in the
    code, and any pair of layouts installed on the system works — even Russian with
    German.
-3. A two-stage detector makes the decision. First, the system spelling dictionary
+3. Word boundaries are also determined by keys, not by characters. The keys `,` `.`
+   `;` `'` `[` `]` produce the letters `б ю ж э х ъ` in the Russian layout, so `,.hj`
+   is a single word ("бюро"), not punctuation followed by `hj`. Such a mark counts as
+   part of the word only when letters follow it; the period ending `hello.` stays
+   punctuation.
+4. A two-stage detector makes the decision. First, the system spelling dictionary
    (`NSSpellChecker`): a word that doesn't exist in the current language but becomes
    a dictionary word after conversion is almost certainly a layout mistake. Words
    outside the dictionaries — and there are plenty, the system Russian dictionary
@@ -98,7 +103,7 @@ the hash, and will survive rebuilds.
    model: allowed letter combinations plus vowel ratio. This second check catches
    what bigrams miss: `hfcrkflrf` — nine consonants in a row, an impossible pattern
    for a real word.
-4. The correction is performed with backspaces and unicode-event insertion, so it
+5. The correction is performed with backspaces and unicode-event insertion, so it
    doesn't depend on the active layout.
 
 The trigger threshold is deliberately conservative: missing a correction is less
@@ -108,7 +113,7 @@ annoying than mangling a correctly typed word.
 
 ```bash
 swift build -c release
-.build/release/LangSwitcher --selftest   # 43 checks on your layouts
+.build/release/LangSwitcher --selftest   # 52 checks on your layouts
 make run                                 # build and run without installing
 ```
 
